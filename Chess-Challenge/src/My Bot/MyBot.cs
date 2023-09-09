@@ -30,7 +30,7 @@ public class MyBot : IChessBot
     {
 
         // save timer
-        time_to_think = timer.MillisecondsRemaining / 30;
+        time_to_think = timer.MillisecondsRemaining / 60;
         time = timer;
 
         int value = 0;
@@ -39,6 +39,7 @@ public class MyBot : IChessBot
         max_depth = 0;
         while(true) {
 
+            //is there still time for the next iteration?
             if(time.MillisecondsElapsedThisTurn >= time_to_think){
                 break;
             }
@@ -87,10 +88,11 @@ public class MyBot : IChessBot
 
         foreach(Move move in moves) {
 
-            // timeout
+            /* timeout
             if(time.MillisecondsElapsedThisTurn >= time_to_think) {
                 break;
             }
+            */
 
             board.MakeMove(move);
             value = Math.Max(value, -search(board, -beta, -alpha, depth - 1, ply + 1));
