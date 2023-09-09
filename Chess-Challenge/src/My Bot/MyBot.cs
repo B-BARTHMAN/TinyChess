@@ -28,7 +28,6 @@ public class MyBot : IChessBot
 
     public Move Think(Board board, Timer timer)
     {
-
         // save timer
         time_to_think = timer.MillisecondsRemaining / 60;
         time = timer;
@@ -39,11 +38,6 @@ public class MyBot : IChessBot
         max_depth = 0;
         while(true) {
 
-            //is there still time for the next iteration?
-            if(time.MillisecondsElapsedThisTurn >= time_to_think){
-                break;
-            }
-
             //increase max_depth
             max_depth++;
             
@@ -53,6 +47,12 @@ public class MyBot : IChessBot
             // start search
             value = search(board, -1000, 1000, max_depth, 0);
 
+            //is there still time for the next iteration?
+            if(time.MillisecondsElapsedThisTurn >= time_to_think){
+                break;
+            }
+            
+
             // save principal variation
             principal_variation = new Move[max_depth];
             for(int i = 0; i < max_depth; i++){
@@ -61,11 +61,11 @@ public class MyBot : IChessBot
 
         }
 
-        Console.WriteLine(value);
+        /*Console.WriteLine(value);
         for(int i = 0; i < max_depth - 1; i++) {
             Console.WriteLine(principal_variation[i]);
         }
-
+        */
         return principal_variation[0];
 
     }
@@ -88,11 +88,11 @@ public class MyBot : IChessBot
 
         foreach(Move move in moves) {
 
-            /* timeout
+            // timeout
             if(time.MillisecondsElapsedThisTurn >= time_to_think) {
                 break;
             }
-            */
+            
 
             board.MakeMove(move);
             value = Math.Max(value, -search(board, -beta, -alpha, depth - 1, ply + 1));
