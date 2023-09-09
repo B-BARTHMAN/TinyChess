@@ -1,8 +1,17 @@
 ﻿using ChessChallenge.API;
 using System;
+using System.Collections.Generic;
+using System.Resources;
 
 public class MyBot : IChessBot
 {
+
+    private Move[,] pv_table;
+    private Move[] principal_variation;
+    private int max_depth;
+    private Timer time;
+    private int time_to_think;
+
     public int Evaluate(Board board) {
 
         if(board.IsDraw()) return 0;
@@ -20,51 +29,94 @@ public class MyBot : IChessBot
     public Move Think(Board board, Timer timer)
     {
 
-        Move best = orderMoves(board, false)[0];
-        int bestValue = 1000;
+        // save timer
+        time_to_think = timer.MillisecondsRemaining / 30;
+        time = timer;
 
-        foreach(Move m in orderMoves(board, false)) {
+        int value = 0;
 
-            board.MakeMove(m);
-            
-            int value = negmax(board, 3, -1000, 1000);
-            if(value < bestValue) {
-                bestValue = value;
-                best = m;
+        // ITERATIVE DEEPENING LOOP
+        max_depth = 0;
+        while(true) {
+
+            if(time.MillisecondsElapsedThisTurn >= time_to_think){
+                break;
             }
 
-            board.UndoMove(m);
+            //increase max_depth
+            max_depth++;
+            
+            // reset principal variation table
+            pv_table = new Move[max_depth, max_depth];
+
+            // start search
+            value = search(board, -1000, 1000, max_depth, 0);
+
+            // save principal variation
+            principal_variation = new Move[max_depth];
+            for(int i = 0; i < max_depth; i++){
+                principal_variation[i] = pv_table[0, i];
+            }
+
         }
 
-        Console.WriteLine(bestValue);
+        Console.WriteLine(value);
+        for(int i = 0; i < max_depth - 1; i++) {
+            Console.WriteLine(principal_variation[i]);
+        }
 
-        return best;
+        return principal_variation[0];
+
     }
 
-    public int negmax(Board board, int depth, int alpha, int beta){
-
-        if(depth == 0 || board.IsInCheckmate() || board.IsDraw()) {
-            return quiescence(board, alpha, beta);
-        }
+    public int search(Board board, int alpha, int beta, int depth, int ply){
         
+        // evaluate leaf nodes with qsearch
+        if(depth == 0 || board.IsInCheckmate() || board.IsDraw()) {
+            return qsearch(board, alpha, beta);
+        }
+
+        // generate moves
+        Move[] moves = orderMoves(board, false, ply);
+        
+        // best value found so far
         int value = -1000;
 
-        foreach(Move m in board.GetLegalMoves()) {
+        // no pv
+        pv_table[ply, ply] = moves[^1];
 
-            board.MakeMove(m);
-            value = Math.Max(value, -negmax(board, depth - 1, -beta, -alpha));
-            board.UndoMove(m);
+        foreach(Move move in moves) {
 
-            alpha = Math.Max(alpha, value);
+            // timeout
+            if(time.MillisecondsElapsedThisTurn >= time_to_think) {
+                break;
+            }
+
+            board.MakeMove(move);
+            value = Math.Max(value, -search(board, -beta, -alpha, depth - 1, ply + 1));
+            board.UndoMove(move);
+
+            // new better bound
+            if(value > alpha) {
+
+                alpha = value;
+                pv_table[ply, ply] = move;
+
+                // copy down principal variation
+                for(int i = ply + 1; i < max_depth; i++){
+                    pv_table[ply, i] = pv_table[ply + 1, i];
+                }
+            }
+            // beta cut-off
             if(alpha >= beta) {
                 break;
             }
         }
 
-        return value;
+        return alpha;
     }
     
-    public int quiescence(Board board, int alpha, int beta) {
+    public int qsearch(Board board, int alpha, int beta) {
         int standing = Evaluate(board);
         if(standing >= beta) {
             return beta;
@@ -76,7 +128,7 @@ public class MyBot : IChessBot
         foreach(Move m in orderMoves(board, true)) {
 
             board.MakeMove(m);
-            int value = -quiescence(board, -beta, -alpha);
+            int value = -qsearch(board, -beta, -alpha);
             board.UndoMove(m);
 
             if(value >= beta) {
@@ -91,29 +143,50 @@ public class MyBot : IChessBot
         return alpha;
     }
 
-    public Move[] orderMoves(Board board, bool capturesOnly) {
+    public Move[] orderMoves(Board board, bool capturesOnly = false, int ply = 999) {
 
         Move[] moves = board.GetLegalMoves(capturesOnly);
 
-        Array.Sort(moves, (m0, m1) =>  MoveOrderValue(m1) - MoveOrderValue(m0));
+        Array.Sort(moves, (m0, m1) =>  MoveOrderValue(m1, ply) - MoveOrderValue(m0, ply));
 
         return moves;
     }
 
-    public int MoveOrderValue(Move m){
+    public int MoveOrderValue(Move move, int ply){
+
+        /*
+        Move Values
+
+        x | P1| S3| B3| R4| Q5| K6
+        -------------------------
+        P | 1 | -3| -3| -5| -7| -9
+        -------------------------
+        S | 5 | 1 | 1 | -1| -3| -5
+        -------------------------
+        B | 5 | 1 | 1 | -1| -3| -5
+        -------------------------
+        R | 7 | 3 | 3 | 1 | -1| -3
+        -------------------------
+        Q | 9 | 5 | 5 | 3 | 1| -1
+        */
         
-        // Queen Promotion
-        if(m.IsPromotion && m.PromotionPieceType == PieceType.Queen) {
+        // principal variation move
+        if(max_depth > 1 && ply < principal_variation.Length && move.Equals(principal_variation[ply])){
+            return 11;
+        }
+
+        // queen promotion
+        if(move.IsPromotion && move.PromotionPieceType == PieceType.Queen) {
             return 10;
         }
 
-        // Capture 
-        if(m.IsCapture){
-            return 2 * ((m.CapturePieceType == PieceType.Knight ? PieceType.Bishop : m.CapturePieceType) 
-            - (m.MovePieceType == PieceType.Knight ? PieceType.Bishop : m.MovePieceType)) + 1;
+        // capture 
+        if(move.IsCapture){
+            return 2 * ((move.CapturePieceType == PieceType.Knight ? PieceType.Bishop : move.CapturePieceType) 
+            - (move.MovePieceType == PieceType.Knight ? PieceType.Bishop : move.MovePieceType)) + 1;
         }
 
-        // QuietMoves
+        // quiet moves
         return 0;
     }
 
