@@ -105,7 +105,7 @@ public class MyBot : IChessBot
 
         }
 
-        Console.WriteLine(value);
+        //Console.WriteLine(value);
         /*
         for(int i = 0; i < max_depth - 1; i++) {
             Console.WriteLine(principal_variation[i]);
