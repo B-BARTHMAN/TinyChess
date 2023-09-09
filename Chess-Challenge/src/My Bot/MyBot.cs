@@ -14,22 +14,64 @@ public class MyBot : IChessBot
 
     public int Evaluate(Board board) {
 
+        // draw
         if(board.IsDraw()) return 0;
 
-        if(board.IsInCheckmate()) return -1000;
+        // we lost
+        if(board.IsInCheckmate()) return -100000;
 
-        PieceList[] pieceLists = board.GetAllPieceLists();
+        // sum up score
+        int score = 0;
 
-        return (pieceLists[0].Count - pieceLists[6].Count + 
-        3 * (pieceLists[1].Count + pieceLists[2].Count - pieceLists[7].Count - pieceLists[8].Count) + 
-        5 * (pieceLists[3].Count - pieceLists[9].Count) + 
-        9 * (pieceLists[4].Count - pieceLists[10].Count)) * (board.IsWhiteToMove ? 1 : -1);
+        Move[] moves = board.GetLegalMoves();
+
+        foreach(PieceList piecelist in board.GetAllPieceLists()) {
+
+            int color = (board.IsWhiteToMove ? 1 : -1) * (piecelist.IsWhitePieceList ? 1 : -1);
+
+            for(int i = 0; i < piecelist.Count; i++){
+
+                Piece piece = piecelist.GetPiece(i);
+
+                switch(piecelist.TypeOfPieceInList){
+
+                    // pawn
+                    case PieceType.Pawn:
+                        score += 100 * color;
+                        score += (int)Math.Pow(piece.IsWhite ? piece.Square.Rank : (7 - piece.Square.Rank), 2) * color;
+                        break;
+                    // knight
+                    case PieceType.Knight:
+                        score += (int)(325 - Math.Abs(piece.Square.Rank - 3.5) - Math.Abs(piece.Square.File - 3.5)) * color;
+                        break;
+                    // king
+                    case PieceType.Bishop:
+                        score += (300 + BitboardHelper.GetNumberOfSetBits(
+                            BitboardHelper.GetSliderAttacks(PieceType.Bishop, piece.Square, board)) * 2) * color;
+                        break;
+                    // rook
+                    case PieceType.Rook:
+                        score += (500 + BitboardHelper.GetNumberOfSetBits(
+                            BitboardHelper.GetSliderAttacks(PieceType.Rook, piece.Square, board)
+                            ) * 2) * color;
+                        break;
+                    // queen
+                    case PieceType.Queen:
+                        score += (900 + BitboardHelper.GetNumberOfSetBits(
+                            BitboardHelper.GetSliderAttacks(PieceType.Rook, piece.Square, board)
+                            ) * 2) * color;
+                        break;
+                }
+            }
+        }
+
+        return score + moves.Length;
     }
 
     public Move Think(Board board, Timer timer)
     {
         // save timer
-        time_to_think = timer.MillisecondsRemaining / 60;
+        time_to_think = timer.MillisecondsRemaining / 20;
         time = timer;
 
         int value = 0;
@@ -45,12 +87,14 @@ public class MyBot : IChessBot
             pv_table = new Move[max_depth, max_depth];
 
             // start search
-            value = search(board, -1000, 1000, max_depth, 0);
+            int score = search(board, -100000, 100000, max_depth, 0);
 
             //is there still time for the next iteration?
             if(time.MillisecondsElapsedThisTurn >= time_to_think){
                 break;
             }
+
+            value = score;
             
 
             // save principal variation
@@ -61,7 +105,8 @@ public class MyBot : IChessBot
 
         }
 
-        /*Console.WriteLine(value);
+        Console.WriteLine(value);
+        /*
         for(int i = 0; i < max_depth - 1; i++) {
             Console.WriteLine(principal_variation[i]);
         }
