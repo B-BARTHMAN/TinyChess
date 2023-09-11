@@ -1,240 +1,288 @@
-﻿using ChessChallenge.API;
+//#define DEBUG
 using System;
-using System.Collections.Generic;
-using System.Resources;
+using System.Numerics;
+using System.Linq;
+using ChessChallenge.API;
 
 public class MyBot : IChessBot
 {
+    private int psq_init;
+    private readonly int[][] psq_table;
 
-    private Move[,] pv_table;
-    private Move[] principal_variation;
-    private int max_depth;
-    private Timer time;
-    private int time_to_think;
+    public MyBot() {
 
-    public int Evaluate(Board board) {
+        psq_table = new []{ 1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285519912875851776m, 1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285519912875851776m, 1237940039285380274899124224m, 
+                            1237940039285380274899124351m, 1237940039285380274899124351m, 1237940039285380274899124351m, 1237940039285380274899124438m, 1237940039285380274899124438m, 1237940039285380274899124351m, 1237940039285380274899124351m, 1237940039285380274899124351m, 
+                            1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124266m, 1237940039285380274899124266m, 1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m, 
+                            1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m, 39304596247310823728047194196m, 39304596247310823728047194196m, 1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m, 
+                            1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m, 39304596247310823728047194112m, 39304596247310823728047194112m, 1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m, 
+                            1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m, 
+                            1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m, 
+                            1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m, 1237940039285380274899124224m }
+                            .Select(square_values => new BigInteger(square_values).ToByteArray().Take(12)
+                            .Select(square => (int)((sbyte)square * 0.23622048) + 
+                            // LINUS TO DO
+                            // PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING
+                            (new []{100, 300, 320, 500, 900, 0, // MG
+                                    200, 400, 450, 700, 1200, 0 // EG
+                            })[psq_init++ % 12]
+                            ).ToArray()).ToArray();
+        #if DEBUG
+        //PSQGen.GeneratePSQ();
+        #endif
 
-        // draw
-        if(board.IsDraw()) return 0;
-
-        // we lost
-        if(board.IsInCheckmate()) return -100000;
-
-        // sum up score
-        int score = 0;
-
-        Move[] moves = board.GetLegalMoves();
-
-        foreach(PieceList piecelist in board.GetAllPieceLists()) {
-
-            int color = (board.IsWhiteToMove ? 1 : -1) * (piecelist.IsWhitePieceList ? 1 : -1);
-
-            for(int i = 0; i < piecelist.Count; i++){
-
-                Piece piece = piecelist.GetPiece(i);
-
-                switch(piecelist.TypeOfPieceInList){
-
-                    // pawn
-                    case PieceType.Pawn:
-                        score += 100 * color;
-                        score += (int)Math.Pow(piece.IsWhite ? piece.Square.Rank : (7 - piece.Square.Rank), 2) * color;
-                        break;
-                    // knight
-                    case PieceType.Knight:
-                        score += (int)(325 - Math.Abs(piece.Square.Rank - 3.5) - Math.Abs(piece.Square.File - 3.5)) * color;
-                        break;
-                    // king
-                    case PieceType.Bishop:
-                        score += (300 + BitboardHelper.GetNumberOfSetBits(
-                            BitboardHelper.GetSliderAttacks(PieceType.Bishop, piece.Square, board)) * 2) * color;
-                        break;
-                    // rook
-                    case PieceType.Rook:
-                        score += (500 + BitboardHelper.GetNumberOfSetBits(
-                            BitboardHelper.GetSliderAttacks(PieceType.Rook, piece.Square, board)
-                            ) * 2) * color;
-                        break;
-                    // queen
-                    case PieceType.Queen:
-                        score += (900 + BitboardHelper.GetNumberOfSetBits(
-                            BitboardHelper.GetSliderAttacks(PieceType.Rook, piece.Square, board)
-                            ) * 2) * color;
-                        break;
-                }
-            }
-        }
-
-        return score + moves.Length;
     }
 
     public Move Think(Board board, Timer timer)
     {
-        // save timer
-        time_to_think = timer.MillisecondsRemaining / 20;
-        time = timer;
+        Move[] moves = board.GetLegalMoves();
 
-        int value = 0;
 
-        // ITERATIVE DEEPENING LOOP
-        max_depth = 0;
-        while(true) {
 
-            //increase max_depth
-            max_depth++;
-            
-            // reset principal variation table
-            pv_table = new Move[max_depth, max_depth];
+        int Evaluate() {
 
-            // start search
-            int score = search(board, -100000, 100000, max_depth, 0);
+            int mg_score = 0;
+            int eg_score = 0;
+            int gamephase = 42;
 
-            //is there still time for the next iteration?
-            if(time.MillisecondsElapsedThisTurn >= time_to_think){
-                break;
-            }
+            for(int color = 0; color < 2; color++){
+                for(int piece_type = 0; piece_type < 12; piece_type++) {
 
-            value = score;
-            
+                    ulong bb = board.GetPieceBitboard((PieceType)piece_type, color == 0);
 
-            // save principal variation
-            principal_variation = new Move[max_depth];
-            for(int i = 0; i < max_depth; i++){
-                principal_variation[i] = pv_table[0, i];
-            }
+                    while(bb != 0){
 
-        }
+                        int square = BitboardHelper.ClearAndGetIndexOfLSB(ref bb) ^ 56 * color;
 
-        //Console.WriteLine(value);
-        /*
-        for(int i = 0; i < max_depth - 1; i++) {
-            Console.WriteLine(principal_variation[i]);
-        }
-        */
-        return principal_variation[0];
+                        mg_score += psq_table[square][piece_type];
+                        eg_score += psq_table[square][piece_type + 6];
 
-    }
-
-    public int search(Board board, int alpha, int beta, int depth, int ply){
-        
-        // evaluate leaf nodes with qsearch
-        if(depth == 0 || board.IsInCheckmate() || board.IsDraw()) {
-            return qsearch(board, alpha, beta);
-        }
-
-        // generate moves
-        Move[] moves = orderMoves(board, false, ply);
-        
-        // best value found so far
-        int value = -1000;
-
-        // no pv
-        pv_table[ply, ply] = moves[^1];
-
-        foreach(Move move in moves) {
-
-            // timeout
-            if(time.MillisecondsElapsedThisTurn >= time_to_think) {
-                break;
-            }
-            
-
-            board.MakeMove(move);
-            value = Math.Max(value, -search(board, -beta, -alpha, depth - 1, ply + 1));
-            board.UndoMove(move);
-
-            // new better bound
-            if(value > alpha) {
-
-                alpha = value;
-                pv_table[ply, ply] = move;
-
-                // copy down principal variation
-                for(int i = ply + 1; i < max_depth; i++){
-                    pv_table[ply, i] = pv_table[ply + 1, i];
+                        gamephase -= piece_type;
+                    }
                 }
             }
-            // beta cut-off
-            if(alpha >= beta) {
-                break;
-            }
+
+            return (gamephase * mg_score + (42 - gamephase) * eg_score) / 42;
         }
 
-        return alpha;
-    }
-    
-    public int qsearch(Board board, int alpha, int beta) {
-        int standing = Evaluate(board);
-        if(standing >= beta) {
-            return beta;
-        }
-        if(alpha < standing){
-            alpha = standing;
-        }
-
-        foreach(Move m in orderMoves(board, true)) {
-
-            board.MakeMove(m);
-            int value = -qsearch(board, -beta, -alpha);
-            board.UndoMove(m);
-
-            if(value >= beta) {
-                return beta;
-            }
-            if(value > alpha) {
-                alpha = value;
-            }
-
-        }
-
-        return alpha;
-    }
-
-    public Move[] orderMoves(Board board, bool capturesOnly = false, int ply = 999) {
-
-        Move[] moves = board.GetLegalMoves(capturesOnly);
-
-        Array.Sort(moves, (m0, m1) =>  MoveOrderValue(m1, ply) - MoveOrderValue(m0, ply));
-
-        return moves;
-    }
-
-    public int MoveOrderValue(Move move, int ply){
-
-        /*
-        Move Values
-
-        x | P1| S3| B3| R4| Q5| K6
-        -------------------------
-        P | 1 | -3| -3| -5| -7| -9
-        -------------------------
-        S | 5 | 1 | 1 | -1| -3| -5
-        -------------------------
-        B | 5 | 1 | 1 | -1| -3| -5
-        -------------------------
-        R | 7 | 3 | 3 | 1 | -1| -3
-        -------------------------
-        Q | 9 | 5 | 5 | 3 | 1| -1
-        */
         
-        // principal variation move
-        if(max_depth > 1 && ply < principal_variation.Length && move.Equals(principal_variation[ply])){
-            return 11;
-        }
-
-        // queen promotion
-        if(move.IsPromotion && move.PromotionPieceType == PieceType.Queen) {
-            return 10;
-        }
-
-        // capture 
-        if(move.IsCapture){
-            return 2 * ((move.CapturePieceType == PieceType.Knight ? PieceType.Bishop : move.CapturePieceType) 
-            - (move.MovePieceType == PieceType.Knight ? PieceType.Bishop : move.MovePieceType)) + 1;
-        }
-
-        // quiet moves
-        return 0;
+        return moves[0];
     }
 
+    
+    #if DEBUG
+    private class PSQGen {
+        // LINUS TO DO
+        public static void GeneratePSQ() {
+
+            int[] pawn_mg = new int[]{
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 20, 20, 0, 0, 0,
+                0, 0, 0, 10, 10, 0, 0, 0,
+                30, 30, 30, -10, -10, 30, 30, 30,
+                0, 0, 0, 0, 0, 0, 0, 0
+            };
+
+            int[] pawn_eg = new int[]{
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0
+            };
+
+            int[] knight_mg = new int[]{
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0
+            };
+
+            int[] knight_eg = new int[]{
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0
+            };
+
+            int[] bishop_mg = new int[]{
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0
+            };
+
+            int[] bishop_eg = new int[]{
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0
+            };
+
+            int[] rook_mg = new int[]{
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0
+            };
+
+            int[] rook_eg = new int[]{
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0
+            };
+
+            int[] queen_mg = new int[]{
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0
+            };
+
+            int[] queen_eg = new int[]{
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0
+            };
+
+            int[] king_mg = new int[]{
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 30, 0, 0, 0, 30, 0
+            };
+
+            int[] king_eg = new int[]{
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 30, 30, 1, 1, 1,
+                1, 1, 1, 30, 30, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1
+            };
+
+            BigInteger[] values = new BigInteger[64];
+
+            int min_val = 9999999;
+            int max_val = -9999999;
+
+            for(int y = 0; y < 8; y++){
+                for(int x = 0; x < 8; x++){
+                    int table_index = (8 * (7 - y)) + x;
+                    int insert_index = 8 * y + x;
+
+                    min_val = Math.Min(min_val, pawn_eg[table_index]);
+                    min_val = Math.Min(min_val, pawn_mg[table_index]);
+                    min_val = Math.Min(min_val, knight_eg[table_index]);
+                    min_val = Math.Min(min_val, knight_mg[table_index]);
+                    min_val = Math.Min(min_val, bishop_eg[table_index]);
+                    min_val = Math.Min(min_val, bishop_mg[table_index]);
+                    min_val = Math.Min(min_val, rook_eg[table_index]);
+                    min_val = Math.Min(min_val, rook_mg[table_index]);
+                    min_val = Math.Min(min_val, queen_eg[table_index]);
+                    min_val = Math.Min(min_val, queen_mg[table_index]);
+                    min_val = Math.Min(min_val, king_eg[table_index]);
+                    min_val = Math.Min(min_val, king_mg[table_index]);
+
+                    max_val = Math.Max(max_val, pawn_eg[table_index]);
+                    max_val = Math.Max(max_val, pawn_mg[table_index]);
+                    max_val = Math.Max(max_val, knight_eg[table_index]);
+                    max_val = Math.Max(max_val, knight_mg[table_index]);
+                    max_val = Math.Max(max_val, bishop_eg[table_index]);
+                    max_val = Math.Max(max_val, bishop_mg[table_index]);
+                    max_val = Math.Max(max_val, rook_eg[table_index]);
+                    max_val = Math.Max(max_val, rook_mg[table_index]);
+                    max_val = Math.Max(max_val, queen_eg[table_index]);
+                    max_val = Math.Max(max_val, queen_mg[table_index]);
+                    max_val = Math.Max(max_val, king_eg[table_index]);
+                    max_val = Math.Max(max_val, king_mg[table_index]);
+                }
+            }
+
+            float multiplier = Math.Max(max_val / 127f, min_val / -128f);
+
+            Console.WriteLine(multiplier);
+
+            for(int y = 0; y < 8; y++){
+                for(int x = 0; x < 8; x++){
+
+                    int table_index = (8 * (7 - y)) + x;
+                    int insert_index = 8 * y + x;
+
+                    sbyte[] bytes = new sbyte[]{
+                        (sbyte)(pawn_mg[table_index] / multiplier),
+                        (sbyte)(knight_mg[table_index] / multiplier),
+                        (sbyte)(bishop_mg[table_index] / multiplier),
+                        (sbyte)(rook_mg[table_index] / multiplier),
+                        (sbyte)(queen_mg[table_index] / multiplier),
+                        (sbyte)(king_mg[table_index] / multiplier),
+                        (sbyte)(pawn_eg[table_index] / multiplier),
+                        (sbyte)(knight_eg[table_index] / multiplier),
+                        (sbyte)(bishop_eg[table_index] / multiplier),
+                        (sbyte)(rook_eg[table_index] / multiplier),
+                        (sbyte)(queen_eg[table_index] / multiplier),
+                        (sbyte)(king_eg[table_index] / multiplier),
+                    };
+                    byte[] bytes2 = new byte[12];
+                    int index = 0;
+                    foreach(sbyte b in bytes) {
+                        bytes2[index++] = b < 0 ? (byte)(b + 256) : (byte)(b);
+                    }
+
+                    values[insert_index] = new BigInteger(bytes2);
+                    Console.WriteLine(values[insert_index] + "m, ");
+
+                }
+            }
+
+        }
+    }
+    #endif
+    
 }
