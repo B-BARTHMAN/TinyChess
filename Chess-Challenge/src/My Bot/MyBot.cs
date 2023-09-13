@@ -17,9 +17,12 @@ public class MyBot : IChessBot
     private (ulong, Move, int, int, int)[] t_table = new (ulong, Move, int, int, int)[0x200000];
 
     // killers
-    Move[] killer = new Move[256];
+    Move[] killer = new Move[1024];
     // history
     int[,,] history = new int[2, 6, 64];
+
+    // time to think
+    int allocated_time;
 
 
 
@@ -50,13 +53,18 @@ public class MyBot : IChessBot
     public Move Think(Board board, Timer timer)
     {   
 
-        // reset tables
-        killer = new Move[256];
+        allocated_time = timer.MillisecondsRemaining / 20;
+
+        // reset history table
         history = new int[2, 6, 64];
         
-        for(int max_depth = 2; max_depth < 7; max_depth++) {
+        for(int max_depth = 2; max_depth < 999; max_depth++) {
             Console.WriteLine(search(-999999, 999999, max_depth, 0));
             Console.WriteLine(root_move);
+
+            if(timer.MillisecondsElapsedThisTurn >= allocated_time) {
+                return root_move;
+            }
         }
 
         int evaluate() {
@@ -82,11 +90,14 @@ public class MyBot : IChessBot
 
                         gamephase += piece_type == 2 || piece_type == 3 ? 1 : 0;
                         
+                        /*
+                        Space Control
                         if(piece_type > 4) continue;
                         mg_score += BitboardHelper.GetNumberOfSetBits(
                             BitboardHelper.GetPieceAttacks((PieceType)piece_type, new Square(square ^ 56 * (1 - color)), board, color == 1)
                             & (0xFFFFFFFFul ^ ((ulong)color * 0xFFFFFFFFFFFFFFFFul))
                             ) * (16 * color - 8);
+                        */
                         
                     }
                 }
@@ -96,6 +107,8 @@ public class MyBot : IChessBot
 
         
         int search(int alpha, int beta, int depth, int ply){
+
+            if(board.IsDraw()) return 0;
             
             // enter quiescence search
             bool qsearch = depth <= 0;
@@ -153,14 +166,35 @@ public class MyBot : IChessBot
             // assume node is gonna be an all node
             int tt_type_new = 3;
 
+            // reuse move_value_index to do pvs for first node
+            move_value_index = 0;
             // do moves
             foreach(Move move in moves) {
 
-                // do recursion
+                // timeout
+                if(timer.MillisecondsElapsedThisTurn >= allocated_time && depth > 2) return 9999;
+                
+                // score of this move
+                int score;
+
+                // make move
                 board.MakeMove(move);
-                int score = -search(-beta, -alpha, depth - 1, ply + 1);
+                
+                // if move is first in move ordering do full pvs search
+                if(move_value_index++ == 0 || qsearch){
+                    score = -search(-beta, -alpha, depth - 1, ply + 1);
+                }
+                // search rest with null window
+                else score = -search(-alpha - 1, -alpha, depth - 1, ply + 1);
+
+                // test failed, research with full window
+                if(move_value_index > 1 && alpha < score && score < beta && !qsearch)
+                    score = -search(-beta, -alpha, depth - 1, ply + 1);
+
+                // undo move
                 board.UndoMove(move);
 
+                // score improved
                 if(score > best_score) {
                     best_score = score;
                     best_move = move;
