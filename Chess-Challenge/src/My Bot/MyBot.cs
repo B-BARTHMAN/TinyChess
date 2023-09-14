@@ -51,7 +51,7 @@ public class MyBot : IChessBot
     }
 
     public Move Think(Board board, Timer timer)
-    {   
+    {
 
         allocated_time = timer.MillisecondsRemaining / 20;
 
@@ -70,25 +70,21 @@ public class MyBot : IChessBot
         int evaluate() {
 
             if(board.IsInCheckmate()) return -999999;
-            if(board.IsDraw()) return 0;
 
-            int mg_score = 0;
-            int eg_score = 0;
-            int gamephase = 0;
+            int mg_score = 0, eg_score = 0, gamephase = 0, piece_type, color = 2;
 
-            for(int color = 0; color < 2; color++){
-                for(int piece_type = 0; piece_type < 7; piece_type++) {
+            for(;--color > -1; mg_score = -mg_score, eg_score = -eg_score){
+                for(piece_type = -1; ++piece_type < 6;) {
+                    
+                    // switch color after eventually using own psqt
+                    for(ulong bb = board.GetPieceBitboard((PieceType)piece_type + 1, color == 1); bb != 0;){
 
-                    ulong bb = board.GetPieceBitboard((PieceType)piece_type, color == 1);
+                        int square = BitboardHelper.ClearAndGetIndexOfLSB(ref bb) ^ 56 * color;
 
-                    while(bb != 0){
+                        mg_score += psq_table[square][piece_type];
+                        eg_score += psq_table[square][piece_type + 6];
 
-                        int square = BitboardHelper.ClearAndGetIndexOfLSB(ref bb) ^ 56 * (1 - color);
-
-                        mg_score += psq_table[square][piece_type - 1] * (2 * color - 1);
-                        eg_score += psq_table[square][piece_type + 5] * (2 * color - 1);
-
-                        gamephase += piece_type == 2 || piece_type == 3 ? 1 : 0;
+                        gamephase += 0x42110 >> piece_type * 4 & 0xF;
                         
                         /*
                         Space Control
@@ -102,7 +98,7 @@ public class MyBot : IChessBot
                     }
                 }
             }
-            return (gamephase * mg_score + (8 - gamephase) * eg_score) / 8  * (board.IsWhiteToMove ? 1 : -1);
+            return (gamephase * mg_score + (24 - gamephase) * eg_score) / (board.IsWhiteToMove ? 24 : -24);
         }
 
         
@@ -213,9 +209,11 @@ public class MyBot : IChessBot
                     // node is actually cut node
                     tt_type_new = 2;
                     // set killers and history
-                    killer[ply] = move;
-                    history[ply & 1, (int)move.MovePieceType - 1, move.TargetSquare.Index] += depth * depth;
-                    break;
+                    if(!move.IsCapture) {
+                        killer[ply] = move;
+                        history[ply & 1, (int)move.MovePieceType - 1, move.TargetSquare.Index] += depth * depth;
+                        break;
+                    }
                 }
             }
 
